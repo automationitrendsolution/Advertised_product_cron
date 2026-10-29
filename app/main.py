@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
@@ -334,6 +335,10 @@ class AdProductPipeline:
         """Whether a headed browser would actually be visible to anyone."""
         if self.options.headed:
             return True
+        # Windows and macOS desktops always have one; Linux has one only when
+        # an X11/Wayland display is set (never over plain SSH).
+        if sys.platform in ("win32", "darwin"):
+            return True
         return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
     # -- stages ------------------------------------------------------------
@@ -366,7 +371,7 @@ class AdProductPipeline:
         a second time.  Only a report Amazon marked *failed* is re-created.
         """
         downloaded: dict[str, DownloadResult] = {}
-        requested: dict[str, tuple[ReportSpec, str]] = {}
+        requested: dict[str, tuple[ReportSpec, str, str | None]] = {}
 
         def keep(result: DownloadResult) -> None:
             downloaded[result.spec_key] = result
@@ -380,8 +385,11 @@ class AdProductPipeline:
                     if spec.key in downloaded or spec.key in requested:
                         continue
                     name = self._report_name(spec)
-                    reports.create_report(spec, self.options.period, name)
-                    requested[spec.key] = (spec, name)
+                    history_url = reports.create_report(spec, self.options.period, name)
+                    requested[spec.key] = (spec, name, history_url)
+                    # Back to the list for the next "Create report".
+                    reports.goto_list()
+                    reports.wait_for_list()
                 try:
                     wait_and_download(
                         session, reports, self.settings, requested, on_downloaded=keep

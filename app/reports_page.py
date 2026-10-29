@@ -154,8 +154,13 @@ class ReportsPage:
 
     # -- creating a report -------------------------------------------------
 
-    def create_report(self, spec: ReportSpec, period: Period, name: str) -> None:
+    def create_report(self, spec: ReportSpec, period: Period, name: str) -> str | None:
         """Fill in the "New report" form and run it (screenshots 2-8).
+
+        Returns the URL of the report's own History page, which is where
+        Amazon lands after "Run report" (verified 2026-10-29: the page shows
+        "Report: <name>", a Status column that starts at "Pending", and an
+        Action column).  None if Amazon went back to the list instead.
 
         Raises:
             ReportConfigError: A control is missing or did not take the value.
@@ -173,16 +178,26 @@ class ReportsPage:
         self._set_report_name(name)
 
         self._click("run_report_button", "Run report")
-        # Run report returns to the list. If it does not, the form is showing a
-        # validation error -- the screenshot says which.
-        if find_first(self.page, "signed_in_marker", timeout_ms=self.settings.browser_timeout_ms) is None:
-            self._fail(
-                f"run-report-{spec.key}",
-                f"After 'Run report' for {spec.label}, the page did not return to the "
-                "report list",
+        # Amazon opens the new report's History page. If it stays on the form
+        # instead, the form is showing a validation error -- the screenshot
+        # says which.
+        try:
+            self.page.wait_for_url(
+                re.compile(r"/reports/history/"), timeout=self.settings.browser_timeout_ms
             )
+        except PlaywrightTimeoutError:
+            if find_first(self.page, "signed_in_marker", timeout_ms=2_000) is None:
+                self._fail(
+                    f"run-report-{spec.key}",
+                    f"After 'Run report' for {spec.label}, Amazon showed neither the "
+                    "report's History page nor the report list",
+                )
+            logger.info("Report requested: %s (back on the list)", name)
+            return None
         self.wait_for_idle()
-        logger.info("Report requested: %s", name)
+        history_url = self.page.url
+        logger.info("Report requested: %s (history page %s)", name, safe_url(history_url))
+        return history_url
 
     def _choose(self, label: str, value: str) -> None:
         """Set a dropdown on the form (Report category / Report type)."""
@@ -307,6 +322,15 @@ class ReportsPage:
             search.press("Enter")
             self.wait_for_idle()
         return find_first(self.page, "report_row", params={"name": name}, timeout_ms=10_000)
+
+    def open_history(self, url: str) -> Locator | None:
+        """Reload a report's History page and return its latest run row."""
+        try:
+            self.page.goto(url, wait_until="domcontentloaded")
+        except Exception as exc:
+            raise NavigationError(f"Could not load the report history page: {exc}") from exc
+        self.wait_for_idle()
+        return find_first(self.page, "history_row", timeout_ms=15_000)
 
     def download_button(self, row: Locator) -> Locator | None:
         """The row's download icon -- present only once the report is ready."""

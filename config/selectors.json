@@ -96,8 +96,18 @@
     "tr:has-text('{name}')",
     "[role='row']:has-text('{name}')"
   ],
-  "_note_download": "Searched for INSIDE the report's row only. The icon only appears once Amazon has finished building the report.",
+  "_note_history": "Verified 2026-10-29: after 'Run report' Amazon opens /reports/history/<id>, headed 'Report: <name>', with a table Status | Last run | Report period | Recipients | Action. The new run's row starts as 'Pending' with '—' in Action.",
+  "history_row": [
+    "table tbody tr:has(td)",
+    "tr:has(td)",
+    "[role='row']:has([role='cell'])"
+  ],
+  "_note_download": "Searched for INSIDE a row only (a History row or a list row). The download only appears once Amazon has finished building the report.",
   "row_download_button": [
+    "role=link[name=/download/i]",
+    "role=button[name=/download/i]",
+    "a:has-text('Download')",
+    "button:has-text('Download')",
     "button[aria-label*='download' i]",
     "a[aria-label*='download' i]",
     "[data-testid*='download' i]",

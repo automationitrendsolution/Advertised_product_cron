@@ -218,7 +218,7 @@ class TestShippedCatalogue:
         "report_row", "row_download_button", "new_report_marker", "form_dropdown",
         "dropdown_option", "time_unit_option", "report_period_button",
         "date_preset_option", "date_save_button", "report_name_input",
-        "run_report_button",
+        "run_report_button", "history_row",
     )
 
     def test_every_used_key_is_configured(self) -> None:

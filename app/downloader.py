@@ -67,16 +67,21 @@ def wait_and_download(
     session: BrowserSession,
     reports: ReportsPage,
     settings: Settings,
-    pending: dict[str, tuple[ReportSpec, str]],
+    pending: dict[str, tuple[ReportSpec, str, str | None]],
     *,
     on_downloaded: Callable[[DownloadResult], None],
 ) -> None:
-    """Poll the list until every pending report is downloaded.
+    """Poll until every pending report is downloaded.
+
+    Each report is checked on its own History page (the URL Amazon opened
+    after "Run report"), whose latest row goes Pending -> done with a
+    download in its Action column.  A report without a known History page
+    is looked up in the list by name instead.
 
     Args:
-        pending: ``spec key -> (spec, unique report name)``.  Entries are
-            removed as they download, so on a retry the caller's dict holds
-            only what is still outstanding.
+        pending: ``spec key -> (spec, unique report name, history URL)``.
+            Entries are removed as they download, so on a retry the caller's
+            dict holds only what is still outstanding.
         on_downloaded: Called with each finished file as soon as it lands,
             so a later failure does not lose earlier downloads.
 
@@ -88,8 +93,17 @@ def wait_and_download(
     poll = 0
     while pending:
         poll += 1
-        for key, (spec, name) in list(pending.items()):
-            row = reports.find_report_row(name)
+        on_list = False
+        for key, (spec, name, history_url) in list(pending.items()):
+            if history_url:
+                row = reports.open_history(history_url)
+                on_list = False
+            else:
+                if not on_list:
+                    reports.goto_list()
+                    reports.wait_for_list()
+                    on_list = True
+                row = reports.find_report_row(name)
             if row is None:
                 logger.info("%s: not listed yet (poll %d)", spec.label, poll)
                 continue
@@ -99,7 +113,9 @@ def wait_and_download(
                 raise ReportFailed(key, f"Amazon reports {name!r} as failed: {row_text[:200]}")
             button = reports.download_button(row)
             if button is None:
-                logger.info("%s: still being built (poll %d)", spec.label, poll)
+                logger.info(
+                    "%s: still being built (poll %d): %s", spec.label, poll, row_text[:80]
+                )
                 continue
             result = _download(session, button, settings, key, name)
             pending.pop(key)
@@ -116,8 +132,6 @@ def wait_and_download(
                 + ". Raise REPORT_READY_TIMEOUT_SECONDS if Amazon is slow today."
             )
         session.page.wait_for_timeout(settings.report_poll_seconds * 1000)
-        reports.goto_list()
-        reports.wait_for_list()
 
 
 def _row_text(row: Locator) -> str:
