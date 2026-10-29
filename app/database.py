@@ -138,8 +138,8 @@ class AdvertisedProductRepository:
             self._table = Table(self.table_name, self._metadata, autoload_with=self.engine)
         except SQLAlchemyError as exc:
             raise _database_error(
-                f"Could not reflect table {self.table_name!r}: {exc}. Create it with the "
-                "DDL in docs/setup.md, or set CREATE_TABLE=true.",
+                f"Could not reflect table {self.table_name!r}: {exc}. Create the table "
+                "first, or set CREATE_TABLE=true.",
                 exc,
             ) from exc
         if self.date_column not in self._table.columns:
