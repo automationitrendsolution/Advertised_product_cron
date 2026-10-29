@@ -1,0 +1,161 @@
+{
+  "_comment": "Candidate locators for the Amazon Ads Sponsored ads reports page (advertising.amazon.com/reports), tried in order until one becomes visible. Built from the step-by-step screenshots of the manual process; NOT yet verified against the live DOM -- run 'python run.py --headed --download-only' once and adjust. Amazon changes this DOM without notice: when a run fails naming a key, add the new selector at the TOP of that list rather than editing the code. Any Playwright selector engine works: css, xpath=, text=, role=. Placeholders {label}, {value} and {name} are filled in by the code.",
+
+  "signed_in_marker": [
+    "role=button[name=/^Create report$/i]",
+    "button:has-text('Create report')",
+    "input[placeholder*='Search reports' i]"
+  ],
+  "sign_in_marker": [
+    "form[name='signIn']",
+    "#ap_email",
+    "#ap_password",
+    "input[name='email'][type='email']",
+    "text=/Sign in to continue/i"
+  ],
+  "security_challenge_marker": [
+    "form[action*='validateCaptcha']",
+    "#auth-mfa-otpcode",
+    "input[name='otpCode']",
+    "img[alt*='captcha' i]",
+    "text=/Enter the characters you see/i",
+    "text=/Two-Step Verification/i"
+  ],
+  "signin_email_input": [
+    "#ap_email_login",
+    "#ap_email",
+    "input[type='email'][name='email']",
+    "input[name='email']"
+  ],
+  "signin_continue_button": [
+    "#continue",
+    "input#continue",
+    "input.a-button-input[type='submit']",
+    "#continue-announce",
+    "role=button[name=/^continue$/i]"
+  ],
+  "signin_password_input": [
+    "#ap_password",
+    "input[type='password'][name='password']",
+    "input[name='password']"
+  ],
+  "signin_submit_button": [
+    "#signInSubmit",
+    "input#signInSubmit",
+    "role=button[name=/^sign in$/i]"
+  ],
+  "signin_remember_me": [
+    "input[name='rememberMe']",
+    "#rememberMe"
+  ],
+  "signin_error_message": [
+    "#auth-error-message-box",
+    "div.a-alert-error .a-alert-content",
+    "[role='alert'] .a-alert-content"
+  ],
+  "otp_input": [
+    "#auth-mfa-otpcode",
+    "input[name='otpCode']",
+    "input[type='tel'][name*='otp' i]"
+  ],
+  "otp_remember_device": [
+    "#auth-mfa-remember-device",
+    "input[name='rememberDevice']"
+  ],
+  "otp_submit_button": [
+    "#auth-signin-button",
+    "input[name='mfaSubmit']",
+    "input#auth-signin-button"
+  ],
+  "captcha_marker": [
+    "form[action*='validateCaptcha']",
+    "#auth-captcha-image",
+    "img[alt*='captcha' i]",
+    "text=/Enter the characters you see/i"
+  ],
+
+  "loading_indicator": [
+    "[data-testid='storm-ui-icon-spinner']",
+    "[data-testid='skeleton']",
+    "[role='progressbar']",
+    "[aria-busy='true']"
+  ],
+
+  "_note_list": "Screenshot 2: the list page has a 'Create report' button and a 'Search reports' box above a table whose rows carry the report name (a link) with a download icon beside it.",
+  "create_report_button": [
+    "role=button[name=/^Create report$/i]",
+    "button:has-text('Create report')",
+    "a:has-text('Create report')"
+  ],
+  "search_reports_input": [
+    "input[placeholder*='Search reports' i]",
+    "role=searchbox",
+    "input[type='search']"
+  ],
+  "report_row": [
+    "tr:has-text('{name}')",
+    "[role='row']:has-text('{name}')"
+  ],
+  "_note_download": "Searched for INSIDE the report's row only. The icon only appears once Amazon has finished building the report.",
+  "row_download_button": [
+    "button[aria-label*='download' i]",
+    "a[aria-label*='download' i]",
+    "[data-testid*='download' i]",
+    "button:has([data-testid*='download' i])",
+    "a[href*='download' i]",
+    "[title*='download' i]"
+  ],
+
+  "_note_form": "Screenshots 3-25: the 'New report' form. Report category and Report type are dropdown buttons showing their current value. The label-anchored XPath finds the first button WITH TEXT after the label, which skips the (i) info icon next to it.",
+  "new_report_marker": [
+    "role=button[name=/^Run report$/i]",
+    "button:has-text('Run report')",
+    "text=/^New report$/"
+  ],
+  "form_dropdown": [
+    "xpath=//*[normalize-space(text())='{label}']/following::button[normalize-space(.)!=''][1]",
+    "xpath=//label[contains(normalize-space(.),'{label}')]/following::button[normalize-space(.)!=''][1]",
+    "xpath=//*[normalize-space(text())='{label}']/following::*[@role='combobox' or @aria-haspopup][1]"
+  ],
+  "dropdown_option": [
+    "role=option[name=/^{value}$/i]",
+    "role=menuitem[name=/^{value}$/i]",
+    "role=menuitemradio[name=/^{value}$/i]",
+    "[role='listbox'] li:text-is('{value}')",
+    "li:text-is('{value}')",
+    "[role='listbox'] button:text-is('{value}')",
+    "[role='menu'] button:text-is('{value}')"
+  ],
+  "time_unit_option": [
+    "label:text-is('{value}')",
+    "role=radio[name=/^{value}$/i]",
+    "xpath=//input[@type='radio']/following::*[normalize-space(text())='{value}'][1]"
+  ],
+  "_note_period": "Screenshots 6-7: 'Report period' is a button with a calendar icon showing e.g. 'Last 30 days'. It opens presets (Today, Yesterday, ...) beside two calendars, with Cancel / Save.",
+  "report_period_button": [
+    "xpath=//*[normalize-space(text())='Report period']/following::button[normalize-space(.)!=''][1]",
+    "button:has([data-testid='storm-ui-icon-calendar'])",
+    "button:has-text('Last 30 days')"
+  ],
+  "date_preset_option": [
+    "li:text-is('{value}')",
+    "role=option[name=/^{value}$/i]",
+    "role=menuitem[name=/^{value}$/i]",
+    "role=button[name=/^{value}$/i]",
+    "button:text-is('{value}')",
+    "role=radio[name=/^{value}$/i]"
+  ],
+  "date_save_button": [
+    "role=button[name=/^Save$/i]",
+    "button:text-is('Save')"
+  ],
+  "report_name_input": [
+    "xpath=//*[normalize-space(text())='Report name']/following::input[1]",
+    "input[name*='reportName' i]",
+    "input[id*='reportName' i]"
+  ],
+  "run_report_button": [
+    "role=button[name=/^Run report$/i]",
+    "button:has-text('Run report')"
+  ]
+}

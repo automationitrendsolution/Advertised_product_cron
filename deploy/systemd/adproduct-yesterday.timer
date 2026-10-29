@@ -1,0 +1,13 @@
+# Yesterday's reports once a day at 14:00 India time. That is 00:30 or 01:30 in
+# US/Pacific, so Amazon's "Yesterday" is the full, finished US day.
+[Unit]
+Description=AdProduct: yesterday's reports daily at 14:00 IST
+
+[Timer]
+OnCalendar=*-*-* 14:00:00 Asia/Kolkata
+# If the server was down at 14:00, run as soon as it is back.
+Persistent=true
+Unit=adproduct@yesterday.service
+
+[Install]
+WantedBy=timers.target

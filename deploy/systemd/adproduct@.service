@@ -1,0 +1,33 @@
+# One AdProduct run. %i is the period: "today" or "yesterday".
+# Started by adproduct-today.timer and adproduct-yesterday.timer.
+[Unit]
+Description=AdProduct - Amazon advertised-product reports (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=adproduct
+Group=adproduct
+WorkingDirectory=/opt/adproduct
+ExecStart=/usr/local/bin/uv run --no-sync python run.py --period %i --quiet
+# Three reports, each built by Amazon in the background, plus retries and a
+# possible wait for the other timer's run to release the lock.
+TimeoutStartSec=7200
+Nice=10
+
+# Hardening: AdProduct only writes inside its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/adproduct/data /opt/adproduct/logs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=adproduct-%i

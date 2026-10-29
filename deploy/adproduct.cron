@@ -1,0 +1,25 @@
+# AdProduct schedule for cron -- an alternative to the systemd timers in
+# deploy/systemd/. Use one or the other, never both.
+#
+# Install:  sudo cp deploy/adproduct.cron /etc/cron.d/adproduct
+#           sudo chmod 644 /etc/cron.d/adproduct
+#
+# cron reads these times in the SERVER'S timezone. Check it with `timedatectl`
+# and keep exactly ONE of the two blocks below uncommented.
+#
+# Each run takes the shared lock; a run that finds it held waits for it rather
+# than being skipped (LOCK_WAIT_SECONDS), so the daily "yesterday" run is never
+# lost to a "today" run that is still going.
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+HOME=/home/adproduct
+
+# --- Server timezone is UTC (the usual cloud default) -----------------------
+# 00:00, 03:00 ... 21:00 IST == hh:30 UTC every 3 hours; 14:00 IST == 08:30 UTC.
+30 */3 * * * adproduct cd /opt/adproduct && /usr/local/bin/uv run --no-sync python run.py --period today --quiet >> logs/cron.log 2>&1
+30 8 * * *   adproduct cd /opt/adproduct && /usr/local/bin/uv run --no-sync python run.py --period yesterday --quiet >> logs/cron.log 2>&1
+
+# --- Server timezone is Asia/Kolkata ------------------------------------------
+# 0 */3 * * * adproduct cd /opt/adproduct && /usr/local/bin/uv run --no-sync python run.py --period today --quiet >> logs/cron.log 2>&1
+# 0 14 * * *  adproduct cd /opt/adproduct && /usr/local/bin/uv run --no-sync python run.py --period yesterday --quiet >> logs/cron.log 2>&1
