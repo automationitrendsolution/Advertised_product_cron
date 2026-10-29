@@ -354,7 +354,7 @@ def load_settings(env_file: Path | str | None = None, *, override: bool = False)
         viewport_height=_get_int("VIEWPORT_HEIGHT", 1080, minimum=320),
         report_timezone=_get_zone("REPORT_TIMEZONE", "US/Pacific"),
         report_name_prefix=_get("REPORT_NAME_PREFIX", "AdProduct") or "AdProduct",
-        report_ready_timeout_seconds=_get_int("REPORT_READY_TIMEOUT_SECONDS", 1_200, minimum=30),
+        report_ready_timeout_seconds=_get_int("REPORT_READY_TIMEOUT_SECONDS", 5_400, minimum=30),
         report_poll_seconds=_get_int("REPORT_POLL_SECONDS", 20, minimum=5),
         download_timeout_ms=_get_int("DOWNLOAD_TIMEOUT_MS", 180_000, minimum=1_000),
         table=_get("DB_TABLE", DEFAULT_TABLE) or DEFAULT_TABLE,

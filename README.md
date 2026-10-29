@@ -126,7 +126,7 @@ chmod 600 .env
 | `DB_TABLE` | `Advertised_product` | |
 | `DB_DATE_FORMAT` | `%Y-%m-%d` | How dates are written, as the original script did. |
 | `REPORT_NAME_PREFIX` | `AdProduct` | Start of every report name the run creates. |
-| `REPORT_READY_TIMEOUT_SECONDS` | `1200` | How long Amazon may take to build a report. |
+| `REPORT_READY_TIMEOUT_SECONDS` | `5400` | How long Amazon may take to build a report. Sponsored Products took 39 minutes in testing; SB and SD about one. |
 | `REPORT_POLL_SECONDS` | `20` | How often the list is checked while waiting. |
 | `REPORT_TIMEZONE` | `US/Pacific` | The marketplace zone Amazon's Today/Yesterday follow. |
 | `LOCK_WAIT_SECONDS` | `3600` | A run that finds another in progress waits this long. |

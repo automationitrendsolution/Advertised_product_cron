@@ -92,6 +92,21 @@ class BrowserSession:
             timezone_id,
             self.settings.session_dir,
         )
+        # Headless: a fixed page size, so every run renders the same layout.
+        # Headed: a maximized window whose page follows the window -- a fixed
+        # 1920x1080 page in a smaller laptop window is cut off on screen.
+        if self.headless:
+            sizing: dict[str, object] = {
+                "viewport": {
+                    "width": self.settings.viewport_width,
+                    "height": self.settings.viewport_height,
+                }
+            }
+            args = list(self.settings.browser_args)
+        else:
+            sizing = {"no_viewport": True}
+            args = [*self.settings.browser_args, "--start-maximized"]
+
         self._playwright = sync_playwright().start()
         try:
             self._context = self._playwright.chromium.launch_persistent_context(
@@ -99,15 +114,12 @@ class BrowserSession:
                 headless=self.headless,
                 accept_downloads=True,
                 downloads_path=str(self.settings.download_dir),
-                args=list(self.settings.browser_args),
+                args=args,
                 slow_mo=self.settings.slow_mo_ms or 0,
                 user_agent=self.settings.user_agent,
-                viewport={
-                    "width": self.settings.viewport_width,
-                    "height": self.settings.viewport_height,
-                },
                 locale="en-US",
                 timezone_id=timezone_id,
+                **sizing,
             )
         except Exception as exc:  # pragma: no cover - launch failures are env-specific
             self.close()

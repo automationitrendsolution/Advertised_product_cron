@@ -96,14 +96,16 @@
     "tr:has-text('{name}')",
     "[role='row']:has-text('{name}')"
   ],
-  "_note_history": "Verified 2026-10-29: after 'Run report' Amazon opens /reports/history/<id>, headed 'Report: <name>', with a table Status | Last run | Report period | Recipients | Action. The new run's row starts as 'Pending' with '—' in Action.",
+  "_note_history": "Verified against the live DOM 2026-10-29: after 'Run report' Amazon opens /reports/history/<id>. The runs table is AG Grid -- div[role=row] holding div[role=gridcell][col-id=status|reportCreationTimestamp|reportPeriod|recipients|action], NOT an HTML table. The status cell reads 'Pending' then 'Completed'; the action cell then holds <a href='/reports/subscriptions/<id>/download-report/<run id>'>Download</a>.",
   "history_row": [
-    "table tbody tr:has(td)",
-    "tr:has(td)",
-    "[role='row']:has([role='cell'])"
+    ".ag-center-cols-container [role='row'][row-index='0']",
+    "[role='row'][row-index='0']:has([col-id='status'])",
+    "[role='row']:has([role='gridcell'][col-id='status'])"
   ],
   "_note_download": "Searched for INSIDE a row only (a History row or a list row). The download only appears once Amazon has finished building the report.",
   "row_download_button": [
+    "a[href*='/download-report/']",
+    "[col-id='action'] a:text-is('Download')",
     "role=link[name=/download/i]",
     "role=button[name=/download/i]",
     "a:has-text('Download')",

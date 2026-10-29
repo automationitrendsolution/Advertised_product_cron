@@ -16,6 +16,7 @@ report is recognised by its columns, so a file name is never relied on.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,7 +71,10 @@ def read_report_file(path: Path) -> pd.DataFrame:
 
     try:
         if head.startswith(_ZIP_MAGIC):
-            frame = pd.read_excel(path, engine="openpyxl")
+            with warnings.catch_warnings():
+                # Amazon's workbooks carry no default style; harmless noise.
+                warnings.filterwarnings("ignore", message="Workbook contains no default style")
+                frame = pd.read_excel(path, engine="openpyxl")
         else:
             frame = _read_csv(path)
     except ReportValidationError:
