@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from app.logging_config import RedactingFilter, configure_logging
@@ -95,3 +96,17 @@ class TestConfigureLogging:
         logger = configure_logging(tmp_path, level="INFO", console=False)
 
         assert logger.handlers[0].backupCount == 7
+
+    def test_lines_are_plain_ist_time_level_stage_message(self, tmp_path: Path) -> None:
+        configure_logging(tmp_path, level="INFO", console=False)
+        logger = logging.getLogger("advertised-product.downloader")
+
+        logger.warning("Sponsored Brands downloaded")
+        for handler in logging.getLogger("advertised-product").handlers:
+            handler.flush()
+
+        line = (tmp_path / "adproduct.log").read_text().strip()
+        assert re.fullmatch(
+            r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d IST \| WARN  \| Download +\| Sponsored Brands downloaded",
+            line,
+        )

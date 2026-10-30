@@ -38,6 +38,9 @@ _ZIP_MAGIC = b"PK\x03\x04"
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 #: Row text that means Amazon gave up building the report.
 _FAILED = re.compile(r"\bfail(ed|ure)?\b", re.IGNORECASE)
+#: How often the "still waiting" line is written.  Polls run every
+#: REPORT_POLL_SECONDS; logging each one buries the rest of the run.
+WAIT_LOG_EVERY_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -89,11 +92,14 @@ def wait_and_download(
         ReportFailed: Amazon marked a report as failed.
         DownloadError: A report was not ready within REPORT_READY_TIMEOUT_SECONDS.
     """
-    deadline = monotonic() + settings.report_ready_timeout_seconds
+    started = monotonic()
+    deadline = started + settings.report_ready_timeout_seconds
+    last_wait_log: float | None = None
     poll = 0
     while pending:
         poll += 1
         on_list = False
+        waiting: list[str] = []
         for key, (spec, name, history_url) in list(pending.items()):
             if history_url:
                 row = reports.open_history(history_url)
@@ -105,7 +111,8 @@ def wait_and_download(
                     on_list = True
                 row = reports.find_report_row(name)
             if row is None:
-                logger.info("%s: not listed yet (poll %d)", spec.label, poll)
+                logger.debug("%s: not listed yet (poll %d)", spec.label, poll)
+                waiting.append(f"{spec.category}: not listed yet")
                 continue
             row_text = _row_text(row)
             if _FAILED.search(row_text.replace(name, "")):
@@ -113,25 +120,44 @@ def wait_and_download(
                 raise ReportFailed(key, f"Amazon reports {name!r} as failed: {row_text[:200]}")
             button = reports.download_button(row)
             if button is None:
-                logger.info(
+                logger.debug(
                     "%s: still being built (poll %d): %s", spec.label, poll, row_text[:80]
                 )
+                waiting.append(f"{spec.category}: being built")
                 continue
             result = _download(session, button, settings, key, name)
+            logger.info(
+                "%s downloaded (%.1f KB) after %s",
+                spec.category,
+                result.size_kb,
+                _minutes(monotonic() - started),
+            )
             pending.pop(key)
             on_downloaded(result)
 
         if not pending:
             break
+        now = monotonic()
+        if last_wait_log is None or now - last_wait_log >= WAIT_LOG_EVERY_SECONDS:
+            last_wait_log = now
+            logger.info(
+                "Waiting for Amazon (%s so far): %s",
+                _minutes(now - started),
+                " | ".join(waiting) or "checking",
+            )
         if monotonic() >= deadline:
             session.capture_failure("reports-not-ready")
             raise DownloadError(
-                "Report(s) still not ready after "
-                f"{settings.report_ready_timeout_seconds}s: "
-                + ", ".join(name for _spec, name in pending.values())
-                + ". Raise REPORT_READY_TIMEOUT_SECONDS if Amazon is slow today."
+                f"Amazon had not finished after {_minutes(monotonic() - started)}: "
+                + ", ".join(spec.category for spec, _name, _url in pending.values())
+                + ". Raise REPORT_READY_TIMEOUT_SECONDS if Amazon is often this slow."
             )
         session.page.wait_for_timeout(settings.report_poll_seconds * 1000)
+
+
+def _minutes(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    return f"{minutes} min" if minutes else f"{int(seconds)} s"
 
 
 def _row_text(row: Locator) -> str:
@@ -159,7 +185,7 @@ def _download(
         raise DownloadError(f"Could not save {name!r} to {target}: {exc}") from exc
 
     target, size = validate_download(target)
-    logger.info("Downloaded %s -> %s (%.1f KB)", name, target.name, size / 1024)
+    logger.debug("Downloaded %s -> %s (%.1f KB)", name, target.name, size / 1024)
     return DownloadResult(key, name, target, size, suggested)
 
 

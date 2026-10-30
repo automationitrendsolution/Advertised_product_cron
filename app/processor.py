@@ -84,7 +84,7 @@ def read_report_file(path: Path) -> pd.DataFrame:
 
     # Fully blank rows are Excel padding, not data.
     frame = frame.dropna(how="all")
-    logger.info("Read %s: %d row(s), %d column(s)", path.name, len(frame), len(frame.columns))
+    logger.debug("Read %s: %d row(s), %d column(s)", path.name, len(frame), len(frame.columns))
     return frame
 
 
@@ -139,7 +139,7 @@ def transform_report(
             or none of its rows has a usable date.
     """
     if frame.empty:
-        logger.info("%s has no rows", spec.label)
+        logger.info("%s: no rows in the report", spec.category)
         return ProcessedReport(spec, source, pd.DataFrame(columns=list(OUTPUT_COLUMNS)))
 
     by_normalised = {normalise_header(column): column for column in frame.columns}
@@ -168,7 +168,7 @@ def transform_report(
     if undated:
         # Amazon appends a totals row to some exports; it has no date.
         logger.warning(
-            "%s: dropping %d row(s) without a readable Date", spec.label, undated
+            "%s: skipped %d row(s) that have no readable Date", spec.category, undated
         )
     out = out[dates.notna()].copy()
     out["Date"] = dates[dates.notna()].dt.strftime(date_format)
@@ -178,7 +178,7 @@ def transform_report(
     for column in TEXT_COLUMNS:
         out[column] = out[column].map(_clean_text)
 
-    logger.info("%s: %d row(s) mapped", spec.label, len(out))
+    logger.info("%s: %s rows read", spec.category, f"{len(out):,}")
     return ProcessedReport(spec, source, out.reset_index(drop=True), dropped_rows=undated)
 
 

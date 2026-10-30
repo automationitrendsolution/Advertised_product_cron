@@ -114,7 +114,7 @@ class AdvertisedProductRepository:
                 connection.execute(text("SELECT 1"))
         except SQLAlchemyError as exc:
             raise _database_error(f"Database connection failed: {exc}", exc) from exc
-        logger.info("Database connection verified")
+        logger.info("Connected to the database")
 
     def create_table_if_missing(self) -> bool:
         """Create the table when it does not exist.  Never alters an existing one."""
@@ -147,7 +147,7 @@ class AdvertisedProductRepository:
                 f"Table {self.table_name!r} has no column {self.date_column!r}. "
                 "Set DB_DATE_COLUMN to the column that holds the report date."
             )
-        logger.info("Reflected %s with %d column(s)", self.table_name, len(self._table.columns))
+        logger.debug("Reflected %s with %d column(s)", self.table_name, len(self._table.columns))
 
     @property
     def table(self) -> Table:
@@ -205,7 +205,7 @@ class AdvertisedProductRepository:
                     # A dead connection cannot roll back, but the server drops
                     # the uncommitted work itself. Raise the error that caused it.
                     logger.warning("ROLLBACK failed: %s", rollback_exc)
-                logger.error("ROLLBACK after error: %s: %s", type(exc).__name__, exc)
+                logger.error("Database change undone (nothing saved) because of: %s: %s", type(exc).__name__, exc)
                 raise
             transaction.commit()
         finally:
@@ -233,7 +233,9 @@ class AdvertisedProductRepository:
                 deleted = connection.execute(
                     delete(table).where(table.c[self.date_column].in_(dates))
                 ).rowcount
-                logger.info("Deleted %s existing row(s) for %s", deleted, ", ".join(dates))
+                logger.info(
+                    "Replacing %s old rows for %s", f"{max(deleted or 0, 0):,}", ", ".join(dates)
+                )
                 inserted = _chunked_insert(connection, table, rows)
         except SQLAlchemyError as exc:
             raise _database_error(
@@ -241,7 +243,7 @@ class AdvertisedProductRepository:
             ) from exc
 
         logger.info(
-            "Committed: %s deleted, %s inserted into %s", deleted, inserted, self.table_name
+            "Saved %s new rows to %s", f"{inserted:,}", self.table_name
         )
         return WriteResult(self.table_name, dates, max(deleted or 0, 0), inserted)
 

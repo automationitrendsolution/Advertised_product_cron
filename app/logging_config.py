@@ -1,7 +1,14 @@
 """Logging setup.
 
-Two sinks: a human-readable console stream and a rotating file under
-``LOG_DIR``.  A redaction filter is installed on both so that a stray
+Two sinks: a console stream and a rotating file under ``LOG_DIR``, both in
+the same plain layout, written for whoever reads the log rather than for the
+code that wrote it::
+
+    2026-10-30 11:02:34 IST | INFO  | Download | Sponsored Brands downloaded (9.0 KB)
+
+Times are IST, the zone the schedule is written in, whatever the server's own
+clock is set to.  Module names, line numbers and process ids appear only at
+DEBUG.  A redaction filter is installed on both sinks so that a stray
 ``repr()`` of a DSN or a cookie jar can never reach disk.
 """
 
@@ -11,12 +18,32 @@ import logging
 import logging.handlers
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 LOGGER_NAME = "advertised-product"
 
-_CONSOLE_FORMAT = "%(asctime)s %(levelname)-8s %(name)s | %(message)s"
-_FILE_FORMAT = "%(asctime)s %(levelname)-8s %(name)s [%(process)d] %(module)s:%(lineno)d | %(message)s"
+_LOG_TZ = ZoneInfo("Asia/Kolkata")
+
+#: Logger name -> the stage of the job it reports on, as shown in the log.
+_AREAS = {
+    "pipeline": "Run",
+    "cli": "Run",
+    "runlock": "Run",
+    "browser": "Browser",
+    "auth": "Sign-in",
+    "reports_page": "Amazon",
+    "selectors": "Amazon",
+    "downloader": "Download",
+    "processor": "Process",
+    "database": "Database",
+    "retry": "Retry",
+    "maintenance": "Cleanup",
+}
+_AREA_WIDTH = max(len(area) for area in _AREAS.values())
+
+_LEVELS = {"WARNING": "WARN", "CRITICAL": "FATAL"}
 
 #: Patterns scrubbed from every log record.  Each must keep group 1 as the
 #: literal prefix so the replacement stays readable.
@@ -63,6 +90,29 @@ def _redact(value: object) -> object:
     return value
 
 
+class ReadableFormatter(logging.Formatter):
+    """``<IST time> | <level> | <stage> | <message>``.
+
+    With ``detailed`` (DEBUG runs) the module and line are appended, for
+    whoever is debugging the code rather than reading the run.
+    """
+
+    def __init__(self, *, detailed: bool = False) -> None:
+        super().__init__()
+        self.detailed = detailed
+
+    def format(self, record: logging.LogRecord) -> str:
+        stamp = datetime.fromtimestamp(record.created, _LOG_TZ).strftime("%Y-%m-%d %H:%M:%S IST")
+        level = _LEVELS.get(record.levelname, record.levelname)
+        area = _AREAS.get(record.name.rsplit(".", 1)[-1], "Run")
+        line = f"{stamp} | {level:<5} | {area:<{_AREA_WIDTH}} | {record.getMessage()}"
+        if self.detailed:
+            line += f"  [{record.module}:{record.lineno}]"
+        if record.exc_info:
+            line += "\n" + self.formatException(record.exc_info)
+        return line
+
+
 def configure_logging(
     log_dir: Path,
     *,
@@ -86,10 +136,11 @@ def configure_logging(
         handler.close()
 
     redactor = RedactingFilter()
+    formatter = ReadableFormatter(detailed=logger.level <= logging.DEBUG)
 
     if console:
         stream = logging.StreamHandler(sys.stdout)
-        stream.setFormatter(logging.Formatter(_CONSOLE_FORMAT))
+        stream.setFormatter(formatter)
         stream.addFilter(redactor)
         logger.addHandler(stream)
 
@@ -100,7 +151,7 @@ def configure_logging(
         encoding="utf-8",
         utc=True,
     )
-    file_handler.setFormatter(logging.Formatter(_FILE_FORMAT))
+    file_handler.setFormatter(formatter)
     file_handler.addFilter(redactor)
     logger.addHandler(file_handler)
 
@@ -109,7 +160,7 @@ def configure_logging(
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
     if run_id:
-        logger.info("run_id=%s", run_id)
+        logger.debug("run_id=%s", run_id)
     return logger
 
 

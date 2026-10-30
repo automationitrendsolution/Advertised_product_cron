@@ -86,7 +86,7 @@ class BrowserSession:
         # Chromium in that same zone means the calendar it shows agrees too,
         # instead of being a day ahead in IST for part of every day.
         timezone_id = self.settings.report_timezone.key
-        logger.info(
+        logger.debug(
             "Launching Chromium (headless=%s, timezone=%s, session_dir=%s)",
             self.headless,
             timezone_id,
@@ -128,7 +128,7 @@ class BrowserSession:
         self._context.set_default_timeout(self.settings.browser_timeout_ms)
         self._context.set_default_navigation_timeout(self.settings.browser_timeout_ms)
         self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
-        logger.info("Chromium ready")
+        logger.info("Browser started (%s)", "hidden" if self.headless else "visible window")
 
     def close(self) -> None:
         """Close the context and stop the driver.  Never raises."""
@@ -179,7 +179,7 @@ class BrowserSession:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             self._page.screenshot(path=str(path), full_page=True)
-            logger.info("Saved screenshot %s", path)
+            logger.debug("Saved screenshot %s", path)
             return path
         except Exception as exc:  # pragma: no cover - best effort
             logger.warning("Could not capture screenshot %s: %s", label, exc)
@@ -203,5 +203,10 @@ class BrowserSession:
         if shot is not None:
             details["screenshot"] = str(shot)
         if details:
-            logger.error("Browser failure context (%s): %s", label, details)
+            logger.error(
+                "Picture of the page saved to %s (page title: %r, address: %s)",
+                details.get("screenshot", "<not saved>"),
+                details.get("title", "?"),
+                details.get("url", "?"),
+            )
         return details

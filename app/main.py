@@ -28,8 +28,13 @@ from .downloader import DownloadResult, ReportFailed, wait_and_download
 from .exceptions import (
     AdProductError,
     AuthenticationError,
+    ConfigurationError,
     DatabaseError,
+    DownloadError,
     EmptyReportError,
+    LockError,
+    NavigationError,
+    ReportConfigError,
     ReportValidationError,
 )
 from .logging_config import get_logger
@@ -51,6 +56,10 @@ from .timeutils import INDIA_TZ, US_PACIFIC_TZ, now_in, now_utc, resolve_report_
 logger = get_logger("pipeline")
 
 T = TypeVar("T")
+
+_RULE = "=" * 78
+#: Width of the field names in the start and result blocks.
+_FIELD = 10
 
 
 class RunMode(str, Enum):
@@ -86,12 +95,29 @@ class RunOptions:
             label = f"{label} ({self.period.value})"
         return f"{label} dry-run" if self.dry_run else label
 
+    @property
+    def description(self) -> str:
+        """What this run does, in words for the log."""
+        day = "today's" if self.period is Period.TODAY else "yesterday's"
+        if self.mode is RunMode.LOGIN:
+            text = "Sign in to Amazon (one-time setup)"
+        elif self.mode is RunMode.PROCESS_FILES:
+            text = "Save report files that were downloaded by hand"
+        elif self.mode is RunMode.DOWNLOAD_ONLY:
+            text = f"Download {day} 3 reports only (no database)"
+        else:
+            text = f"Download {day} 3 reports and save them to the database"
+        if self.dry_run:
+            text += " -- DRY RUN, nothing is saved"
+        return text
+
 
 @dataclass
 class RunSummary:
     """Everything the run is expected to report on."""
 
     mode: str
+    description: str = ""
     started_at: object = field(default_factory=now_utc)
     finished_at: object | None = None
     expected_date: date | None = None
@@ -100,6 +126,9 @@ class RunSummary:
     data_dates: list[str] = field(default_factory=list)
     write_result: WriteResult | None = None
     error: str | None = None
+    advice: str | None = None
+    no_data: bool = False
+    dry_run: bool = False
     succeeded: bool = False
 
     @property
@@ -107,31 +136,114 @@ class RunSummary:
         end = self.finished_at or now_utc()
         return (end - self.started_at).total_seconds()  # type: ignore[operator]
 
-    def log(self) -> None:
-        logger.info("=" * 72)
-        logger.info("Run summary (%s)", self.mode)
-        logger.info("  started (UTC)      : %s", self.started_at)
-        logger.info("  started (IST)      : %s", now_in(INDIA_TZ, reference=self.started_at))  # type: ignore[arg-type]
-        logger.info("  duration           : %.1fs", self.duration_seconds)
-        logger.info("  expected date      : %s", self.expected_date or "n/a")
-        for download in self.downloads:
-            logger.info(
-                "  downloaded         : %s (%.1f KB)", download.path.name, download.size_kb
-            )
-        for label, rows in self.report_rows.items():
-            logger.info("  %-18s : %d row(s)", label, rows)
-        logger.info("  dates in data      : %s", ", ".join(self.data_dates) or "none")
+    @property
+    def headline(self) -> str:
+        if self.no_data:
+            return f"NO DATA YET - Amazon has no rows for {self.expected_date or 'this day'} yet"
+        if not self.succeeded:
+            return "FAILED"
         if self.write_result:
-            logger.info(
-                "  %s: %d deleted, %d inserted",
-                self.write_result.table,
-                self.write_result.deleted,
-                self.write_result.inserted,
+            return (
+                f"SUCCESS - {self.write_result.inserted:,} rows saved for "
+                f"{', '.join(self.write_result.dates)}"
             )
-        logger.info("  status             : %s", "SUCCESS" if self.succeeded else "FAILED")
-        if self.error:
-            logger.info("  error              : %s", self.error)
-        logger.info("=" * 72)
+        if self.report_rows:
+            total = sum(self.report_rows.values())
+            return f"SUCCESS (dry run) - {total:,} rows ready, nothing saved"
+        if self.downloads:
+            return f"SUCCESS - {len(self.downloads)} report(s) downloaded"
+        return "SUCCESS"
+
+    def log(self) -> None:
+        failed = not (self.succeeded or self.no_data)
+        write = _block_writer(logger.error if failed else logger.info)
+        logger.info(_RULE)
+        write("RESULT", self.headline)
+        logger.info(_RULE)
+        write("What", self.description or self.mode)
+        write("Started", _ist(self.started_at))
+        write(
+            "Finished",
+            f"{_ist(self.finished_at or now_utc())}  (took {_duration(self.duration_seconds)})",
+        )
+        if self.expected_date:
+            write("Data for", f"{self.expected_date} (Amazon's day, US Pacific time)")
+        elif self.data_dates:
+            write("Data for", ", ".join(self.data_dates))
+        if self.report_rows:
+            width = max(len(label) for label in self.report_rows)
+            lines = [f"{label:<{width}}  {rows:>8,}" for label, rows in self.report_rows.items()]
+            lines.append(f"{'Total':<{width}}  {sum(self.report_rows.values()):>8,}")
+            write("Rows", *lines)
+        elif self.downloads:
+            write("Files", *(f"{d.path.name} ({d.size_kb:,.1f} KB)" for d in self.downloads))
+        if self.write_result:
+            write(
+                "Database",
+                f"{self.write_result.table}: removed {self.write_result.deleted:,} old rows, "
+                f"saved {self.write_result.inserted:,} new rows",
+            )
+        elif self.no_data or failed:
+            write("Database", "not changed (existing data is untouched)")
+        elif self.dry_run:
+            write("Database", "not changed (dry run)")
+        if self.error and not self.no_data:
+            write("Problem", self.error)
+        if self.advice:
+            write("What next", self.advice)
+        logger.info(_RULE)
+
+
+def _block_writer(emit: Callable[..., None]) -> Callable[..., None]:
+    """``write("Field", "line", "more")`` -> aligned ``Field : line`` rows."""
+
+    def write(name: str, *lines: str) -> None:
+        for index, line in enumerate(lines):
+            emit(" %-*s %s %s", _FIELD, name if index == 0 else "", ":" if index == 0 else " ", line)
+
+    return write
+
+
+def _ist(moment: object) -> str:
+    return now_in(INDIA_TZ, reference=moment).strftime("%Y-%m-%d %H:%M IST")  # type: ignore[arg-type]
+
+
+def _duration(seconds: float) -> str:
+    minutes, secs = divmod(int(round(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours} h {minutes} min"
+    if minutes:
+        return f"{minutes} min {secs} s"
+    return f"{secs} s"
+
+
+def advice_for(error: BaseException) -> str:
+    """What a person reading the log should do about ``error``."""
+    if isinstance(error, EmptyReportError):
+        return (
+            "Nothing to do. This is normal just after midnight US time; "
+            "a later run will pick the data up."
+        )
+    if isinstance(error, AuthenticationError):
+        return "The Amazon sign-in has expired. Sign in again with: uv run python run.py --login"
+    if isinstance(error, LockError):
+        return "Another run was still going. The next scheduled run will try again."
+    if isinstance(error, ConfigurationError):
+        return "Check the settings in the .env file."
+    if isinstance(error, DatabaseError):
+        return (
+            "Check that MySQL is reachable and the DB_* values in .env are right. "
+            "Nothing was half-saved: the database changes all at once or not at all."
+        )
+    if isinstance(error, (DownloadError, NavigationError, ReportConfigError)):
+        return (
+            "Amazon was slow or its page changed. The next scheduled run will try again; "
+            "if it keeps happening, look at the newest picture in data/screenshots."
+        )
+    if isinstance(error, ReportValidationError):
+        return "A report file did not look right; see the problem above."
+    return "Unexpected error; the details are in the lines above."
 
 
 class AdProductPipeline:
@@ -152,7 +264,9 @@ class AdProductPipeline:
         """
         self.settings = settings
         self.options = options
-        self.summary = RunSummary(mode=options.label)
+        self.summary = RunSummary(
+            mode=options.label, description=options.description, dry_run=options.dry_run
+        )
         # A caller that supplies its own repository owns its lifecycle, so the
         # pipeline must not dispose the engine out from under it.
         self._owns_repository = repository_factory is None
@@ -165,6 +279,8 @@ class AdProductPipeline:
     def run(self) -> RunSummary:
         """Execute the configured mode, returning the summary either way."""
         self.settings.ensure_directories()
+        if self.options.mode in {RunMode.FULL, RunMode.DOWNLOAD_ONLY}:
+            self.resolve_expected_date()
         self._log_start()
         try:
             with run_lock(
@@ -181,13 +297,20 @@ class AdProductPipeline:
                 else:
                     self._run_full()
             self.summary.succeeded = True
+        except EmptyReportError as exc:
+            # Not a fault: Amazon simply has nothing for the day yet.
+            self.summary.no_data = True
+            self.summary.error = str(exc)
+            self.summary.advice = advice_for(exc)
+            raise
         except AdProductError as exc:
-            self.summary.error = f"{type(exc).__name__}: {exc}"
-            logger.error("Run failed: %s", self.summary.error)
+            self.summary.error = str(exc)
+            self.summary.advice = advice_for(exc)
             raise
         except Exception as exc:  # noqa: BLE001 - surfaced after summary
             self.summary.error = f"{type(exc).__name__}: {exc}"
-            logger.exception("Unexpected failure")
+            self.summary.advice = advice_for(exc)
+            logger.exception("The run stopped on an unexpected error")
             raise
         finally:
             self.summary.finished_at = now_utc()
@@ -195,21 +318,34 @@ class AdProductPipeline:
         return self.summary
 
     def _log_start(self) -> None:
-        logger.info("=" * 72)
-        logger.info("AdProduct starting | mode=%s", self.options.label)
-        logger.info("  UTC            : %s", now_utc().isoformat())
-        logger.info("  US/Pacific     : %s", now_in(US_PACIFIC_TZ).isoformat())
-        logger.info("  Asia/Kolkata   : %s", now_in(INDIA_TZ).isoformat())
+        write = _block_writer(logger.info)
+        logger.info(_RULE)
+        write("START", "Advertised product report")
+        logger.info(_RULE)
+        write("What", self.options.description)
+        write(
+            "Time",
+            f"{_ist(self.summary.started_at)}  "
+            f"(US Pacific: {now_in(US_PACIFIC_TZ).strftime('%Y-%m-%d %H:%M')})",
+        )
+        if self.summary.expected_date:
+            write("Data for", f"{self.summary.expected_date} (Amazon's day, US Pacific time)")
+        if self.options.mode is not RunMode.LOGIN:
+            write("Database", f"{self.settings.database.name}.{self.settings.table}")
+        logger.info(_RULE)
+        # The full configuration is for debugging, not for reading every run.
         for key, value in self.settings.describe().items():
-            logger.info("  %-14s : %s", key, value)
-        logger.info("=" * 72)
+            logger.debug("setting %-20s : %s", key, value)
+
+    def _step(self, number: int, total: int, text: str) -> None:
+        logger.info("--- Step %d of %d: %s ---", number, total, text)
 
     def resolve_expected_date(self) -> date:
         expected = resolve_report_date(
             self.settings.report_timezone, offset_days=self.options.period.offset_days
         )
         self.summary.expected_date = expected
-        logger.info(
+        logger.debug(
             "Period %s -> expecting data for %s (%s)",
             self.options.period.preset,
             expected,
@@ -220,12 +356,20 @@ class AdProductPipeline:
     # -- modes -------------------------------------------------------------
 
     def _run_full(self) -> None:
-        expected = self.resolve_expected_date()
+        expected = self.summary.expected_date or self.resolve_expected_date()
+        self._step(1, 4, "Connect to the database")
         repository = self._open_repository()
         downloads: dict[str, DownloadResult] = {}
         try:
-            downloads = self._download_with_retry()
+            downloads = self._download_with_retry(first_step=2, total_steps=4)
             files = {key: result.path for key, result in downloads.items()}
+            self._step(
+                4,
+                4,
+                "Read the reports and save them to the database"
+                if self.options.writes_database
+                else "Read the reports (dry run: not saving)",
+            )
             self._process_and_load(files, repository, expected)
             self._dispose_files(list(files.values()))
         finally:
@@ -239,13 +383,13 @@ class AdProductPipeline:
                 repository.dispose()
 
     def _run_download_only(self) -> None:
-        self.resolve_expected_date()
-        downloads = self._download_with_retry()
+        downloads = self._download_with_retry(first_step=1, total_steps=2)
         for result in downloads.values():
-            logger.info("Download-only: %s (%.1f KB)", result.path, result.size_kb)
+            logger.info("Saved %s (%.1f KB)", result.path, result.size_kb)
 
     def _run_process_files(self) -> None:
         """Load files downloaded by hand, recognising each by its columns."""
+        self._step(1, 3, "Check the files")
         files: dict[str, Path] = {}
         for raw in self.options.files:
             path = Path(raw).expanduser().resolve()
@@ -260,7 +404,7 @@ class AdProductPipeline:
                 raise ReportValidationError(
                     f"Two files are both {spec.label}: {files[spec.key].name}, {path.name}"
                 )
-            logger.info("%s is the %s report", path.name, spec.label)
+            logger.info("%s is the %s report", path.name, spec.category)
             files[spec.key] = path
 
         missing = [spec.label for spec in REPORTS if spec.key not in files]
@@ -272,8 +416,16 @@ class AdProductPipeline:
                 f"Missing: {', '.join(missing)}"
             )
 
+        self._step(2, 3, "Connect to the database")
         repository = self._open_repository()
         try:
+            self._step(
+                3,
+                3,
+                "Read the reports and save them to the database"
+                if self.options.writes_database
+                else "Read the reports (dry run: not saving)",
+            )
             self._process_and_load(files, repository, expected=None)
         finally:
             if repository is not None and self._owns_repository:
@@ -353,7 +505,7 @@ class AdProductPipeline:
         except DatabaseError:
             if self.options.writes_database:
                 raise
-            logger.warning("DRY RUN: MySQL is unreachable; continuing without it")
+            logger.warning("Dry run: cannot reach MySQL, carrying on without it")
             return None
 
     def _report_name(self, spec: ReportSpec) -> str:
@@ -363,7 +515,9 @@ class AdProductPipeline:
             f"{self.options.period.value} {stamp}"
         )
 
-    def _download_with_retry(self) -> dict[str, DownloadResult]:
+    def _download_with_retry(
+        self, *, first_step: int, total_steps: int
+    ) -> dict[str, DownloadResult]:
         """Create all three reports, then wait for and download each.
 
         State survives a retry: a report already downloaded is not fetched
@@ -380,6 +534,17 @@ class AdProductPipeline:
         def attempt() -> None:
             with BrowserSession(self.settings, headless=self._headless()) as session:
                 reports = ReportsPage(session, self.settings)
+                to_create = [
+                    spec for spec in REPORTS
+                    if spec.key not in downloaded and spec.key not in requested
+                ]
+                if to_create:
+                    self._step(
+                        first_step,
+                        total_steps,
+                        f"Ask Amazon for {len(to_create)} report(s) for "
+                        f"{self.options.period.value}",
+                    )
                 reports.open()
                 for spec in REPORTS:
                     if spec.key in downloaded or spec.key in requested:
@@ -390,6 +555,11 @@ class AdProductPipeline:
                     # Back to the list for the next "Create report".
                     reports.goto_list()
                     reports.wait_for_list()
+                self._step(
+                    first_step + 1,
+                    total_steps,
+                    "Wait for Amazon to build the reports, then download them",
+                )
                 try:
                     wait_and_download(
                         session, reports, self.settings, requested, on_downloaded=keep
@@ -398,7 +568,7 @@ class AdProductPipeline:
                     requested.pop(exc.spec_key, None)
                     raise
 
-        self._retry("Amazon report download", attempt)
+        self._retry("Amazon download", attempt)
         return downloaded
 
     def _headless(self) -> bool:
@@ -426,7 +596,7 @@ class AdProductPipeline:
                 frame, spec, source=path, date_format=self.settings.date_format
             )
             processed.append(report)
-            self.summary.report_rows[spec.label] = report.row_count
+            self.summary.report_rows[spec.category] = report.row_count
 
         combined = combine(processed, date_column=self.settings.date_column)
         dates = sorted(combined[self.settings.date_column].dropna().unique().tolist())
@@ -440,16 +610,16 @@ class AdProductPipeline:
             expected_value = expected.strftime(self.settings.date_format)
             if self.summary.data_dates != [expected_value]:
                 logger.warning(
-                    "Expected data for %s only, but the reports hold %s. The dates in "
-                    "the data are what gets replaced.",
+                    "Expected data for %s only, but the reports hold %s. "
+                    "Every date in the reports will be replaced.",
                     expected_value,
                     ", ".join(self.summary.data_dates),
                 )
 
         if repository is None or not self.options.writes_database:
             logger.info(
-                "DRY RUN: %d row(s) prepared for %s; nothing written to MySQL",
-                len(combined),
+                "Dry run: %s rows ready for %s; nothing saved",
+                f"{len(combined):,}",
                 ", ".join(self.summary.data_dates),
             )
             return
@@ -479,25 +649,18 @@ class AdProductPipeline:
                 if keep:
                     destination = self.settings.processed_dir / path.name
                     shutil.move(str(path), str(destination))
-                    logger.info("Archived %s", destination)
+                    logger.info("Kept %s in %s for checking", path.name, destination.parent)
                 else:
                     path.unlink(missing_ok=True)
-                    logger.info("Deleted %s now that it is loaded", path.name)
+                    logger.debug("Deleted %s now that it is saved", path.name)
             except OSError as exc:
                 # Not fatal: housekeeping removes it after FILE_RETENTION_DAYS.
                 logger.warning("Could not dispose of %s: %s", path, exc)
 
 
 def handle_failure(pipeline: AdProductPipeline, error: BaseException) -> None:
-    """Emit the operator-facing guidance for a failed run."""
-    if isinstance(error, AuthenticationError):
-        logger.error(
-            "Authentication is required and cannot be automated. "
-            "Run 'python run.py --login' to refresh the session; without a display "
-            "it asks for Amazon's two-step code in the terminal."
-        )
-    if isinstance(error, EmptyReportError):
-        logger.error(
-            "The reports contained no rows. Nothing was deleted or inserted; "
-            "existing data is unchanged."
-        )
+    """Hook for failure handling beyond the log.
+
+    The advice for the person reading the log is written in the run's
+    result block (see :func:`advice_for`), so there is nothing to add here.
+    """

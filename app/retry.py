@@ -66,29 +66,19 @@ def retry_call(
         except BaseException as exc:  # noqa: BLE001 - re-raised below
             last_error = exc
             if not is_transient(exc):
-                logger.error(
-                    "%s failed with a non-retryable error: %s: %s",
-                    description,
-                    type(exc).__name__,
-                    exc,
-                )
+                # Not worth another try (e.g. a sign-in problem); the run's
+                # result block says what happened and what to do.
+                logger.debug("%s failed, not retryable: %s: %s", description, type(exc).__name__, exc)
                 raise
             if attempt >= attempts:
-                logger.error(
-                    "%s failed after %d attempt(s): %s: %s",
-                    description,
-                    attempt,
-                    type(exc).__name__,
-                    exc,
-                )
+                logger.error("%s: gave up after %d tries", description, attempt)
                 raise
             delay = compute_delay(attempt, base_delay, max_delay)
             logger.warning(
-                "%s failed on attempt %d/%d (%s: %s); retrying in %.1fs",
+                "%s: try %d of %d did not work (%s). Trying again in %.0f s",
                 description,
                 attempt,
                 attempts,
-                type(exc).__name__,
                 exc,
                 delay,
             )

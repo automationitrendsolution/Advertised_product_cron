@@ -51,7 +51,7 @@ def cleanup_old_files(settings: Settings) -> int:
 
     if removed:
         logger.info(
-            "Housekeeping removed %d file(s) older than %d day(s)",
+            "Cleanup: removed %d old file(s) (older than %d days)",
             removed,
             settings.retention_days,
         )

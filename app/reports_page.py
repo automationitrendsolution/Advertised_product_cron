@@ -92,10 +92,10 @@ class ReportsPage:
 
         self.assert_authenticated()
         self.wait_for_list()
-        logger.info("Reports page loaded: %s", safe_url(self.page.url))
+        logger.info("Signed in; the Amazon reports page is open")
 
     def goto_list(self) -> None:
-        logger.info("Navigating to Sponsored ads reports (entity %s)", self.settings.entity_id)
+        logger.debug("Opening the Sponsored ads reports list (entity %s)", self.settings.entity_id)
         try:
             self.page.goto(self.settings.reports_url_with_entity, wait_until="domcontentloaded")
         except PlaywrightTimeoutError as exc:
@@ -167,7 +167,7 @@ class ReportsPage:
         Raises:
             ReportConfigError: A control is missing or did not take the value.
         """
-        logger.info("Creating %s report for %s as %r", spec.label, period.preset, name)
+        logger.debug("Creating %s report for %s as %r", spec.label, period.preset, name)
         self._click("create_report_button", "Create report")
         if find_first(self.page, "new_report_marker", timeout_ms=self.settings.browser_timeout_ms) is None:
             self._fail("new-report-form-missing", "The 'New report' form did not open")
@@ -194,11 +194,12 @@ class ReportsPage:
                     f"After 'Run report' for {spec.label}, Amazon showed neither the "
                     "report's History page nor the report list",
                 )
-            logger.info("Report requested: %s (back on the list)", name)
+            logger.info("%s report requested (%s, Daily, %s)", spec.category, spec.report_type, period.preset)
             return None
         self.wait_for_idle()
         history_url = self.page.url
-        logger.info("Report requested: %s (history page %s)", name, safe_url(history_url))
+        logger.info("%s report requested (%s, Daily, %s)", spec.category, spec.report_type, period.preset)
+        logger.debug("Report %s has history page %s", name, safe_url(history_url))
         return history_url
 
     def _choose(self, label: str, value: str) -> None:
@@ -213,7 +214,7 @@ class ReportsPage:
                 f"Could not find the {label!r} dropdown (config/selectors.json 'form_dropdown')",
             )
         if _norm(_text_of(trigger)) == _norm(value):
-            logger.info("%s already set: %s", label, value)
+            logger.debug("%s already set: %s", label, value)
             return
 
         trigger.click()
@@ -234,7 +235,7 @@ class ReportsPage:
         )
         if _norm(shown) != _norm(value):
             self._fail(f"{label}-not-set", f"{label} shows {shown!r} after choosing {value!r}")
-        logger.info("%s set: %s", label, value)
+        logger.debug("%s set: %s", label, value)
 
     def _wait_for_text(
         self, key: str, params: dict[str, str] | None, accept: Callable[[str], bool]
@@ -257,7 +258,7 @@ class ReportsPage:
     def _choose_time_unit(self, value: str) -> None:
         """Tick the Time unit radio (screenshots 5, 13, 22)."""
         if self._radio_checked(value):
-            logger.info("Time unit already set: %s", value)
+            logger.debug("Time unit already set: %s", value)
             return
         radio = find_first(
             self.page,
@@ -274,7 +275,7 @@ class ReportsPage:
         self.page.wait_for_timeout(SETTLE_MS)
         if self._radio_checked(value) is False:
             self._fail("time-unit-not-set", f"Time unit {value!r} did not become selected")
-        logger.info("Time unit set: %s", value)
+        logger.debug("Time unit set: %s", value)
 
     def _radio_checked(self, value: str) -> bool | None:
         """Whether the named radio is checked; None when it cannot be read."""
@@ -297,7 +298,7 @@ class ReportsPage:
                 "(config/selectors.json 'report_period_button')",
             )
         if _norm(_text_of(trigger)) == _norm(preset):
-            logger.info("Report period already set: %s", preset)
+            logger.debug("Report period already set: %s", preset)
             return
 
         trigger.click()
@@ -325,7 +326,7 @@ class ReportsPage:
             self._fail(
                 "report-period-not-set", f"Report period shows {shown!r} after choosing {preset!r}"
             )
-        logger.info("Report period set: %s", preset)
+        logger.debug("Report period set: %s", preset)
 
     def _set_report_name(self, name: str) -> None:
         field = find_first(

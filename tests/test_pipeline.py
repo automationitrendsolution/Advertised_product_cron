@@ -26,7 +26,7 @@ def pipeline(
 def fake_downloads(files: dict[str, Path], settings: Settings):
     """Stand-in for the browser stage: 'download' the given files."""
 
-    def download(self: AdProductPipeline) -> dict[str, DownloadResult]:
+    def download(self: AdProductPipeline, **_steps: int) -> dict[str, DownloadResult]:
         results = {}
         for key, path in files.items():
             target = settings.download_dir / path.name

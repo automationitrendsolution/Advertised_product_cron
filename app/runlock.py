@@ -94,9 +94,8 @@ def run_lock(
                 )
             if not announced:
                 logger.info(
-                    "Another run holds %s; waiting up to %.0fs for it to finish",
-                    lock_file,
-                    wait_seconds,
+                    "Another run is still going; waiting up to %.0f min for it to finish",
+                    wait_seconds / 60,
                 )
                 announced = True
             sleep(_POLL_SECONDS)
