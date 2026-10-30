@@ -19,6 +19,8 @@ Security boundaries this module will not cross:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
+from time import monotonic
 
 from playwright.sync_api import Locator, Page, TimeoutError as PlaywrightTimeoutError
 
@@ -227,11 +229,30 @@ class ReportsPage:
         option.click()
         self.page.wait_for_timeout(SETTLE_MS)
 
-        trigger = find_first(self.page, "form_dropdown", params=params, timeout_ms=10_000)
-        shown = _text_of(trigger) if trigger is not None else ""
+        shown = self._wait_for_text(
+            "form_dropdown", params, lambda text: _norm(text) == _norm(value)
+        )
         if _norm(shown) != _norm(value):
             self._fail(f"{label}-not-set", f"{label} shows {shown!r} after choosing {value!r}")
         logger.info("%s set: %s", label, value)
+
+    def _wait_for_text(
+        self, key: str, params: dict[str, str] | None, accept: Callable[[str], bool]
+    ) -> str:
+        """Re-read a control until its text passes ``accept``; return the last text.
+
+        After a choice the form re-renders, slowly on a small server: a single
+        read right away saw an empty control on 2026-10-30 although the value
+        had been taken.
+        """
+        deadline = monotonic() + self.settings.browser_timeout_ms / 1000
+        shown = ""
+        while True:
+            control = find_first(self.page, key, params=params, timeout_ms=5_000)
+            shown = _text_of(control) if control is not None else ""
+            if accept(shown) or monotonic() >= deadline:
+                return shown
+            self.page.wait_for_timeout(500)
 
     def _choose_time_unit(self, value: str) -> None:
         """Tick the Time unit radio (screenshots 5, 13, 22)."""
@@ -239,7 +260,10 @@ class ReportsPage:
             logger.info("Time unit already set: %s", value)
             return
         radio = find_first(
-            self.page, "time_unit_option", params={"value": value}, timeout_ms=10_000
+            self.page,
+            "time_unit_option",
+            params={"value": value},
+            timeout_ms=self.settings.browser_timeout_ms,
         )
         if radio is None:
             self._fail(
@@ -263,7 +287,9 @@ class ReportsPage:
 
     def _choose_period(self, preset: str) -> None:
         """Pick a Report period preset (screenshots 6-7)."""
-        trigger = find_first(self.page, "report_period_button", timeout_ms=10_000)
+        trigger = find_first(
+            self.page, "report_period_button", timeout_ms=self.settings.browser_timeout_ms
+        )
         if trigger is None:
             self._fail(
                 "report-period-missing",
@@ -292,8 +318,9 @@ class ReportsPage:
             save.click()
         self.page.wait_for_timeout(SETTLE_MS)
 
-        trigger = find_first(self.page, "report_period_button", timeout_ms=10_000)
-        shown = _text_of(trigger) if trigger is not None else ""
+        shown = self._wait_for_text(
+            "report_period_button", None, lambda text: _norm(preset) in _norm(text)
+        )
         if _norm(preset) not in _norm(shown):
             self._fail(
                 "report-period-not-set", f"Report period shows {shown!r} after choosing {preset!r}"
@@ -301,7 +328,9 @@ class ReportsPage:
         logger.info("Report period set: %s", preset)
 
     def _set_report_name(self, name: str) -> None:
-        field = find_first(self.page, "report_name_input", timeout_ms=10_000)
+        field = find_first(
+            self.page, "report_name_input", timeout_ms=self.settings.browser_timeout_ms
+        )
         if field is None:
             self._fail(
                 "report-name-missing",
