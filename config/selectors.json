@@ -21,6 +21,16 @@
     "text=/Enter the characters you see/i",
     "text=/Two-Step Verification/i"
   ],
+  "signin_account_switcher": [
+    "text=/^\\s*Switch accounts\\s*$/i",
+    "div.cvf-account-switcher"
+  ],
+  "signin_remembered_account": [
+    "div.cvf-account-switcher-claim:has-text('{email}')",
+    "a:has-text('{email}')",
+    "text={email}",
+    "div.cvf-account-switcher-claim"
+  ],
   "signin_email_input": [
     "#ap_email_login",
     "#ap_email",

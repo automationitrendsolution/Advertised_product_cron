@@ -211,6 +211,7 @@ class TestShippedCatalogue:
 
     USED_KEYS = (
         "signed_in_marker", "sign_in_marker", "security_challenge_marker",
+        "signin_account_switcher", "signin_remembered_account",
         "signin_email_input", "signin_continue_button", "signin_password_input",
         "signin_submit_button", "signin_remember_me", "signin_error_message",
         "otp_input", "otp_remember_device", "otp_submit_button", "captcha_marker",
@@ -225,3 +226,15 @@ class TestShippedCatalogue:
         load_selectors.cache_clear()
         catalogue = load_selectors()
         assert [key for key in self.USED_KEYS if key not in catalogue] == []
+
+    def test_remembered_account_is_picked_by_its_email(self) -> None:
+        load_selectors.cache_clear()
+        page = FakePage({"div.cvf-account-switcher-claim:has-text('ads@example.com')"})
+
+        tile = find_first(
+            page, "signin_remembered_account", timeout_ms=1_000,
+            params={"email": "ads@example.com"},
+        )
+
+        assert tile is not None
+        assert tile.selector == "div.cvf-account-switcher-claim:has-text('ads@example.com')"

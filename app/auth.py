@@ -69,6 +69,7 @@ def sign_in(session: BrowserSession, settings: Settings) -> None:
     logger.info("Signing in to Amazon as %s", _mask_email(settings.amazon_email or ""))
 
     _assert_no_challenge(session, stage="before sign-in")
+    _choose_remembered_account(session, page, settings)
     _submit_email(session, page, settings)
     _submit_password(session, page, settings)
     _assert_credentials_accepted(session, page)
@@ -108,6 +109,7 @@ def sign_in_interactive(
 
     if settings.has_credentials:
         logger.info("Signing in to Amazon as %s", _mask_email(settings.amazon_email or ""))
+        _choose_remembered_account(session, page, settings)
         _submit_email(session, page, settings)
         _submit_password(session, page, settings)
         _assert_credentials_accepted(session, page)
@@ -235,6 +237,32 @@ def _otp_error_suffix(page: Page) -> str:
         return f" {banner.inner_text(timeout=1_500).strip()[:200]}"
     except Exception:  # pragma: no cover - defensive
         return ""
+
+
+def _choose_remembered_account(session: BrowserSession, page: Page, settings: Settings) -> None:
+    """Pick our account on Amazon's "Switch accounts" page, if it is showing.
+
+    Once a browser has signed in, an expired session no longer lands on the
+    email form but on a list of remembered accounts (seen on the server
+    2026-11-05).  Clicking the account leads on to the usual password step.
+    """
+    if not is_present(page, "signin_account_switcher", timeout_ms=3_000):
+        return
+    tile = find_first(
+        page,
+        "signin_remembered_account",
+        params={"email": settings.amazon_email or ""},
+        timeout_ms=5_000,
+    )
+    if tile is None:
+        session.capture_failure("signin-account-not-listed")
+        raise AuthenticationError(
+            "Amazon is showing 'Switch accounts' but the account in AMAZON_EMAIL is not "
+            "listed. Check AMAZON_EMAIL in .env."
+        )
+    logger.info("Amazon remembers this account; choosing it on 'Switch accounts'")
+    tile.click()
+    _settle(page)
 
 
 def _submit_email(session: BrowserSession, page: Page, settings: Settings) -> None:
