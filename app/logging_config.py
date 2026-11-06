@@ -30,10 +30,10 @@ _LOG_TZ = ZoneInfo("Asia/Kolkata")
 _AREAS = {
     "pipeline": "Run",
     "cli": "Run",
-    "runlock": "Run",
+    "lock": "Run",
     "browser": "Browser",
     "auth": "Sign-in",
-    "reports_page": "Amazon",
+    "reports": "Amazon",
     "selectors": "Amazon",
     "downloader": "Download",
     "processor": "Process",

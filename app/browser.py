@@ -61,6 +61,9 @@ class BrowserSession:
         self._playwright: Playwright | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
+        #: Whether a problem was already photographed, so the error that
+        #: follows it does not save a second, identical picture.
+        self._captured = False
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -74,7 +77,7 @@ class BrowserSession:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        if exc is not None:
+        if exc is not None and not self._captured:
             self.capture_failure("unhandled-error")
         self.close()
 
@@ -202,9 +205,12 @@ class BrowserSession:
         shot = self.screenshot(label)
         if shot is not None:
             details["screenshot"] = str(shot)
+        self._captured = True
+        # A warning, not an error: most problems are retried and the run still
+        # succeeds.  Whether the run failed is said once, in its result block.
         if details:
-            logger.error(
-                "Picture of the page saved to %s (page title: %r, address: %s)",
+            logger.warning(
+                "Saved a picture of the page for checking: %s (page title: %r, address: %s)",
                 details.get("screenshot", "<not saved>"),
                 details.get("title", "?"),
                 details.get("url", "?"),

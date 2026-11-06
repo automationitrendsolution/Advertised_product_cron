@@ -205,7 +205,9 @@ class AdvertisedProductRepository:
                     # A dead connection cannot roll back, but the server drops
                     # the uncommitted work itself. Raise the error that caused it.
                     logger.warning("ROLLBACK failed: %s", rollback_exc)
-                logger.error("Database change undone (nothing saved) because of: %s: %s", type(exc).__name__, exc)
+                logger.warning(
+                    "Database change undone (nothing saved) because of: %s: %s", type(exc).__name__, exc
+                )
                 raise
             transaction.commit()
         finally:
